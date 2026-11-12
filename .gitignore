@@ -14,3 +14,7 @@ design-previews/
 .env.*
 *.pem
 *.key
+# Keep local Markdown notes out of the public repository.
+*.md
+!/README.md
+*.swp
