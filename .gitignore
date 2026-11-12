@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.npm-cache/
+.browsers/
+test-results/
+playwright-report/
+
+# User-provided geometry for local analysis; do not publish as an app asset.
+references/
+
+design-previews/
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
