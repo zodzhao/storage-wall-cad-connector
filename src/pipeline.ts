@@ -123,7 +123,7 @@ export function validate(a: Float32Array) {
   }
 }
 // Derived from James Gilliland's MIT hws_insert_util.scad. Solid type 2, no decoration.
-export function connector() {
+function hswConnector() {
   const M = api.Manifold;
   const owned: Manifold[] = [];
   const keep = (s: Manifold) => {
@@ -177,7 +177,107 @@ export function connector() {
     });
   }
 }
-export function placed(p: Placement) {
+// Geometry adapted from John Mylchreest's MIT ikea-skadis.scad (2026).
+// Local +Z points into the board; +Y is board-up. The stand-off starts
+// inside the uploaded face after the overlap translation in placed().
+function skadisConnector(blockThickness = 2) {
+  if (!Number.isFinite(blockThickness) || blockThickness < 0 || blockThickness > 10)
+    throw Error("Connector block thickness must be 0–10 mm.");
+  const M = api.Manifold;
+  const owned: Manifold[] = [];
+  const keep = (solid: Manifold) => { owned.push(solid); return solid; };
+  let result: Manifold | undefined;
+  try {
+    // 10 × 15 mm parent-side block; its outer end meets the slot tab.
+    const stand = blockThickness > 0
+      ? keep(M.cube([10, 15, blockThickness + 0.05]).translate([-5, -7.5, 0]))
+      : undefined;
+    const tabStart = Math.max(0, blockThickness - 0.05);
+    // 5 mm-tall, 4.6 mm-wide tab. The back and side edges taper by 0.3 mm
+    // at its upper edge; the panel-facing front edge remains straight.
+    // Hull should taper in board-up (Y), with 8.7 mm depth along +Z.
+    const bottomSlice = keep(M.cube([4.6, 0.001, blockThickness + 8.7 - tabStart]).translate([-2.3, 2.5, tabStart]));
+    const topSlice = keep(M.cube([4.0, 0.001, blockThickness + 8.4 - tabStart]).translate([-2, 7.499, tabStart]));
+    const tab = keep(M.hull([bottomSlice, topSlice]));
+    // The 6.5 mm tail hangs behind 5.7 mm of panel, retaining the peg.
+    const tail = keep(M.cube([4.6, 6.55, 3]).translate([-2.3, -4, blockThickness + 5.7]));
+    const body = stand ? keep(stand.add(tab)) : tab;
+    result = keep(body.add(tail));
+    return result;
+  } finally {
+    owned.forEach((solid) => { if (solid !== result) solid.delete(); });
+  }
+}
+// Port of haliphax's MIT parts/snap.scad at 95a37a6b75fe3feaac61db63dfac0576480ac1df. No official MultiBuild mesh is bundled.
+// This is a compatibility prototype; provenance of the mating profile and
+// physical fit are not established by the upstream code license.
+function multiboardConnector(blockThickness: number) {
+  const M = api.Manifold;
+  const owned: Manifold[] = [];
+  const keep = (solid: Manifold) => { owned.push(solid); return solid; };
+  const octagon = (radius: number, flat: number): [number, number][] => [
+    [flat, -radius], [radius, -flat], [radius, flat], [flat, radius],
+    [-flat, radius], [-radius, flat], [-radius, -flat], [-flat, -radius],
+  ];
+  let result: Manifold | undefined;
+  try {
+    const small = octagon(10.57, 4.38), big = octagon(11.43, 4.73);
+    const core = keep(M.extrude([small], 4));
+    const lower = keep(keep(M.extrude([small], 0.02)).translate([0, 0, 3.99]));
+    const upper = keep(keep(M.extrude([big], 0.02)).translate([0, 0, 5.51]));
+    const taper = keep(M.hull([lower, upper]));
+    let body = keep(core.add(taper));
+    const wedge = keep(M.extrude([[[2.24, 0], [1, 0.48], [0.6, 0.48], [0, 0]]], 3));
+    const prong = keep(keep(wedge.rotate([0, -90, 0])).translate([1.5, 10.52, 0]));
+    const firstNotch = keep(M.cube([7.16, 0.8, 3.41]).translate([-3.58, 8.97, -0.01]));
+    const secondNotch = keep(M.cube([7.16, 1.61, 1]).translate([-3.58, 8.97, 2.4]));
+    const notch = keep(firstNotch.add(secondNotch));
+    for (const angle of [0, 90, 180, 270]) {
+      body = keep(body.add(keep(prong.rotate([0, 0, angle]))));
+      body = keep(body.subtract(keep(notch.rotate([0, 0, angle]))));
+    }
+    // In the source, the broad +Z cap attaches to the model and the slotted
+    // small -Z face enters the board. placed() expects local +Z toward the wall.
+    // A half-turn about X makes the smooth cap model-side without mirroring.
+    const turned = keep(body.rotate([180, 0, 0]));
+    body = keep(turned.translate([0, 0, 5.53]));
+    if (blockThickness > 0) {
+      const raised = keep(body.translate([0, 0, blockThickness]));
+      const pad = keep(M.extrude([big], blockThickness + 0.05));
+      body = keep(raised.add(pad));
+    }
+    result = body;
+    return result;
+  } finally {
+    owned.forEach((solid) => { if (solid !== result) solid.delete(); });
+  }
+}
+export type WallSystem = "hsw" | "skadis" | "multiboard";
+export function connector(system: WallSystem = "hsw", blockThickness = 2) {
+  if (!Number.isFinite(blockThickness) || blockThickness < 0 || blockThickness > 10) {
+    throw Error("Connector block thickness must be 0–10 mm.");
+  }
+  if (system === "skadis") return skadisConnector(blockThickness);
+  if (system === "multiboard") return multiboardConnector(blockThickness);
+  if (system === "hsw") {
+    const snap = hswConnector();
+    if (blockThickness === 0) return snap;
+    let raised: Manifold | undefined, pad: Manifold | undefined;
+    try {
+      raised = snap.translate([0, 0, blockThickness]);
+      // Match the six-sided HSW base rather than obstructing its wall-facing cavity.
+      const radius = 22.5 / Math.sqrt(3);
+      pad = api.Manifold.cylinder(blockThickness + 0.05, radius, radius, 6);
+      return raised.add(pad);
+    } finally {
+      snap.delete();
+      raised?.delete();
+      pad?.delete();
+    }
+  }
+  throw Error("Unsupported wall system.");
+}
+export function placed(p: Placement, system: WallSystem = "hsw", blockThickness = 2) {
   if (
     ![...p.point, ...p.normal, p.rotation, p.depth].every(Number.isFinite) ||
     p.depth < 0.1 ||
@@ -196,20 +296,20 @@ export function placed(p: Placement) {
   );
   const origin = new Vector3(...p.point).addScaledVector(n, -p.depth);
   const matrix = new Matrix4().compose(origin, q, new Vector3(1, 1, 1));
-  const c = connector();
+  const c = connector(system, blockThickness);
   const s = c.transform(
     matrix.elements as Parameters<Manifold["transform"]>[0],
   );
   c.delete();
   return s;
 }
-export function fuse(a: Float32Array, p: Placement) {
+export function fuse(a: Float32Array, p: Placement, system: WallSystem = "hsw", blockThickness = 2) {
   const base = validate(a);
   let plug: Manifold | undefined,
     result: Manifold | undefined,
     overlap: Manifold | undefined;
   try {
-    plug = placed(p);
+    plug = placed(p, system, blockThickness);
     overlap = base.intersect(plug);
     if (overlap.volume() < 0.01)
       throw Error(

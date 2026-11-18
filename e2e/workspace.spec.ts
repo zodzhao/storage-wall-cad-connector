@@ -1,5 +1,14 @@
-import { initialize, sample, encode } from "../src/pipeline";
+import { readFile } from "node:fs/promises";
+import { initialize, sample, encode, parse, validate } from "../src/pipeline";
 import { test, expect } from "@playwright/test";
+test("credits the original HSW listing separately from the MIT connector source", async ({ page }) => {
+  await page.goto("/");
+  const footer = page.locator("footer");
+  await expect(footer.getByRole("link", { name: "Honeycomb storage wall by rostap" }))
+    .toHaveAttribute("href", /makerworld\.com\/.*models\/22521/);
+  await expect(footer).toContainText("CC BY-NC");
+  await expect(footer).toContainText("MIT HWS generator");
+});
 test("self-hosted IBM Plex Sans renders UI text", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => document.fonts.ready);
@@ -177,4 +186,161 @@ test("rotating a side upward changes the model and top-center placement", async 
   await page.getByRole("button", { name: "Reset orientation" }).click();
   await expect(page.locator("#modelInfo")).toContainText("40.0 × 40.0 × 20.0 mm");
   await expect(page.getByRole("button", { name: "Download STL" })).toBeDisabled();
+});
+
+
+test("SKÅDIS selection invalidates HSW export and downloads a fused peg", async ({ page }) => {
+  await initialize();
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Advanced" }).click();
+  await page.getByRole("button", { name: "Try a sample solid" }).click();
+  await expect(page.getByRole("status")).toContainText("Solid validated");
+  await page.getByRole("button", { name: "Use top centre" }).click();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("button", { name: "Download STL" })).toBeEnabled();
+  await page.getByRole("tab", { name: "Basic" }).click();
+  await page.getByRole("combobox", { name: "Wall system" }).selectOption("skadis");
+  await expect(page.getByRole("button", { name: "Download STL" })).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download STL" }).click();
+  const downloaded = await pending;
+  expect(downloaded.suggestedFilename()).toBe("skadis-prototype-fused-mm.stl");
+  const solid = validate(parse(Uint8Array.from(await readFile(await downloaded.path())).buffer));
+  try {
+    const parts = solid.decompose();
+    expect(parts).toHaveLength(1);
+    parts.forEach((part) => part.delete());
+  } finally {
+    solid.delete();
+  }
+});
+
+
+test("SKÅDIS stand-off changes the exported mount and can be zero", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("combobox", { name: "Wall system" }).selectOption("skadis");
+  await page.getByRole("tab", { name: "Advanced" }).click();
+  const thickness = page.getByLabel("Connector block thickness / mm");
+  await expect(thickness).toHaveValue("2");
+  await page.getByRole("button", { name: "Try a sample solid" }).click();
+  await expect(page.getByRole("status")).toContainText("Solid validated");
+  await page.getByRole("button", { name: "Use top centre" }).click();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("button", { name: "Download STL" })).toBeEnabled();
+  async function exportMaxZ() {
+    const pending = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download STL" }).click();
+    const download = await pending;
+    const model = parse(Uint8Array.from(await readFile(await download.path())).buffer);
+    return Math.max(...model.filter((_, i) => i % 3 === 2));
+  }
+  expect(await exportMaxZ()).toBeCloseTo(19.7, 1);
+  await thickness.fill("0");
+  await thickness.blur();
+  await expect(page.getByRole("button", { name: "Download STL" })).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  expect(await exportMaxZ()).toBeCloseTo(17.7, 1);
+  await thickness.fill("6");
+  await thickness.blur();
+  await expect(page.getByRole("button", { name: "Download STL" })).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  expect(await exportMaxZ()).toBeCloseTo(23.7, 1);
+  await page.getByRole("tab", { name: "Basic" }).click();
+  await page.getByRole("combobox", { name: "Wall system" }).selectOption("hsw");
+  await page.getByRole("tab", { name: "Advanced" }).click();
+  await expect(thickness).toBeVisible();
+});
+
+
+test("Multiboard selection exports one validated snap and shares connector block thickness", async ({ page }) => {
+  await initialize();
+  await page.goto("/");
+  await page.getByRole("combobox", { name: "Wall system" }).selectOption("multiboard");
+  await expect(page.locator("#systemNote")).toBeVisible();
+  await expect(page.locator("#systemNote")).toContainText("provenance");
+  await page.getByRole("tab", { name: "Advanced" }).click();
+  const thickness = page.getByLabel("Connector block thickness / mm");
+  await expect(thickness).toBeVisible();
+  await expect(thickness).toHaveValue("2");
+  await page.getByRole("button", { name: "Try a sample solid" }).click();
+  await expect(page.getByRole("status")).toContainText("Solid validated");
+  await page.getByRole("button", { name: "Use top centre" }).click();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  async function exportSnap() {
+    const pending = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download STL" }).click();
+    const download = await pending;
+    expect(download.suggestedFilename()).toBe("multiboard-prototype-fused-mm.stl");
+    const solid = validate(parse(Uint8Array.from(await readFile(await download.path())).buffer));
+    try {
+      const parts = solid.decompose();
+      expect(parts).toHaveLength(1);
+      parts.forEach((part) => part.delete());
+      const coords = solid.getMesh().vertProperties;
+      const maxZ = Math.max(...coords.filter((_, i) => i % 3 === 2));
+      const outwardRadius: number[] = [];
+      for (let i = 0; i < coords.length; i += 3) {
+        if (Math.abs(coords[i + 2] - maxZ) < 0.001)
+          outwardRadius.push(Math.max(Math.abs(coords[i]), Math.abs(coords[i + 1])));
+      }
+      expect(outwardRadius.length).toBeGreaterThan(0);
+      expect(Math.max(...outwardRadius)).toBeLessThan(11.2); // fingers, not smooth broad cap
+      return maxZ;
+    } finally { solid.delete(); }
+  }
+  expect(await exportSnap()).toBeCloseTo(16.53, 1);
+  await thickness.fill("0");
+  await thickness.blur();
+  await expect(page.getByRole("button", { name: "Download STL" })).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  expect(await exportSnap()).toBeCloseTo(14.53, 1);
+  await thickness.fill("11");
+  await thickness.blur();
+  await expect(page.getByRole("status")).toContainText("Connector block thickness must be 0–10 mm");
+  await expect(page.getByRole("button", { name: "Download STL" })).toBeDisabled();
+  await thickness.fill("6");
+  await thickness.blur();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  expect(await exportSnap()).toBeCloseTo(20.53, 1);
+});
+
+test("HSW uses the same block thickness control and changing it invalidates export", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Advanced" }).click();
+  const thickness = page.getByLabel("Connector block thickness / mm");
+  await expect(thickness).toBeVisible();
+  await page.getByRole("button", { name: "Try a sample solid" }).click();
+  await expect(page.getByRole("status")).toContainText("Solid validated");
+  await page.getByRole("button", { name: "Use top centre" }).click();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  await thickness.fill("0");
+  await thickness.blur();
+  await expect(page.getByRole("button", { name: "Download STL" })).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download STL" }).click();
+  const solid = validate(parse(Uint8Array.from(await readFile(await (await pending).path())).buffer));
+  const parts = solid.decompose();
+  expect(parts).toHaveLength(1);
+  parts.forEach((part) => part.delete());
+  solid.delete();
 });

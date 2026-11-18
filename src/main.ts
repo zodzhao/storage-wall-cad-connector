@@ -1,10 +1,10 @@
 import { rotateMesh } from "./orientation";
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import type { Placement, InputUnit } from "./pipeline";
+import type { Placement, InputUnit, WallSystem } from "./pipeline";
 import "./style.css";
 document.querySelector("#app")!.innerHTML = `
-  <header><a href="./" aria-label="HSW workspace home"><strong>Connector</strong> Attach to all your utility walls</a></header>
+  <header><a href="./" aria-label="Connector workspace home"><strong>Connector</strong> Attach to all your utility walls</a></header>
   <main>
     <aside>
       <h1>Attach your model</h1>
@@ -17,7 +17,8 @@ document.querySelector("#app")!.innerHTML = `
           <label class="upload">Open an STL<input id="file" type="file" accept=".stl" /></label>
         </div>
         <div class="step"><h2><span>2</span> Wall system</h2>
-          <select id="wallSystem" aria-label="Wall system"><option value="hsw">Honeycomb Storage Wall (HSW)</option><option disabled>SKÅDIS — coming later</option><option disabled>Multiboard — coming later</option></select>
+          <select id="wallSystem" aria-label="Wall system"><option value="hsw">Honeycomb Storage Wall (HSW)</option><option value="skadis">IKEA SKÅDIS</option><option value="multiboard">Multiboard (prototype)</option></select>
+          <p id="systemNote" class="muted" hidden>Experimental Multiboard snap: source-code licence does not establish mating-profile provenance or physical fit. Verify rights before sharing.</p>
         </div>
         <div class="step"><h2><span>3</span> Choose face center</h2>
           <button id="pick" disabled>Choose face center</button>
@@ -32,6 +33,10 @@ document.querySelector("#app")!.innerHTML = `
         <h2>Orient object</h2><p class="muted">Rotation changes the exported STL, not just the view.</p>
         <div class="rotate-grid"><button id="rotateXp" disabled>Rotate X +90°</button><button id="rotateXm" disabled>Rotate X -90°</button><button id="rotateYp" disabled>Rotate Y +90°</button><button id="rotateYm" disabled>Rotate Y -90°</button></div>
         <button id="resetOrientation" disabled>Reset orientation</button>
+        <div><h2>Connector block</h2>
+          <label>Connector block thickness / mm<input id="blockThickness" type="number" min="0" max="10" step="0.5" value="2"></label>
+          <p class="muted">Applies to every wall system. 0 joins the connector directly to your model; more space may improve board clearance. Check the preview and print-fit.</p>
+        </div>
         <h2>Precise placement</h2>
         <div class="fields">${["x", "y", "z"].map((x) => `<label>${x.toUpperCase()} / mm<input id="${x}" type="number" step="0.1" value="0"></label>`).join("")}
           <label>Rotation / °<input id="rotation" type="number" step="5" value="0"></label>
@@ -49,7 +54,7 @@ document.querySelector("#app")!.innerHTML = `
       <div class="bottom"><p id="status" role="status" aria-live="polite">Open an STL to begin.</p>
         <div class="actions"><button id="cancel" disabled>Cancel</button><button id="fuse" disabled>Fuse & verify</button><button id="download" disabled>Download STL ↓</button></div>
       </div>
-      <footer>Browser only. No model upload, account or server storage. Prototype: physical fit and load capacity untested.<br>Insert derived from <a href="https://github.com/neclimdul/hws_openscad_attachments_and_connectors">James Gilliland’s MIT HWS generator</a>.</footer>
+      <footer>Browser only. No model upload, account or server storage. Prototype: physical fit and load capacity untested.<br>Original wall-system listing: <a href="https://makerworld.com/en/models/22521-honeycomb-storage-wall#profileId-27457">Honeycomb storage wall by rostap</a> (CC BY-NC on MakerWorld; original files not bundled).<br>Connector code derived from <a href="https://github.com/neclimdul/hws_openscad_attachments_and_connectors">James Gilliland’s MIT HWS generator</a>.<br>SKÅDIS peg geometry adapted from <a href="https://github.com/jmylchreest/openscad-models/tree/edeea813c1f7941eea1e2d8fe9e1f844de0a227b/libraries/ikea-skadis">John Mylchreest’s MIT OpenSCAD module</a>. Not affiliated with IKEA.<br>Multiboard snap adapted from <a href="https://github.com/haliphax/multiboard-openscad/blob/95a37a6b75fe3feaac61db63dfac0576480ac1df/parts/snap.scad">haliphax’s MIT OpenSCAD source</a>. Prototype only: design provenance and physical fit unverified; not affiliated with MultiBuild.</footer>
     </section>
   </main>`;
 const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
@@ -162,7 +167,7 @@ function fit() {
   camera.updateProjectionMatrix();
 }
 function buttons() {
-  for (const id of ["file", "sample", "x", "y", "z", "rotation", "depth", "units"])
+  for (const id of ["file", "sample", "x", "y", "z", "rotation", "depth", "units", "wallSystem", "blockThickness"])
     ($(id) as HTMLInputElement).disabled = busy;
   for (const id of ["rotateXp", "rotateXm", "rotateYp", "rotateYm", "resetOrientation"])
     $<HTMLButtonElement>(id).disabled = busy || !model;
@@ -181,7 +186,7 @@ function send(type: string, extra: object = {}) {
   const id = ++seq;
   busy = true;
   buttons();
-  worker.postMessage({ id, type, placement, ...extra });
+  worker.postMessage({ id, type, placement, wallSystem: $<HTMLSelectElement>("wallSystem").value as WallSystem, blockThickness: $<HTMLInputElement>("blockThickness").valueAsNumber, ...extra });
 }
 function boot() {
   worker = new Worker(new URL("./worker.ts", import.meta.url), {
@@ -301,6 +306,19 @@ function importRaw() {
     unit: $<HTMLSelectElement>("units").value as InputUnit | "auto",
   });
 }
+function syncSystemNote() {
+  $("systemNote").hidden = $<HTMLSelectElement>("wallSystem").value !== "multiboard";
+}
+syncSystemNote();
+$<HTMLSelectElement>("wallSystem").onchange = () => {
+  if (busy) return;
+  syncSystemNote();
+  if (selected && model) preview();
+  else { invalidate(); status("Wall system changed. Choose a face center to preview the connector."); }
+};
+$<HTMLInputElement>("blockThickness").onchange = () => {
+  if (!busy) preview();
+};
 $<HTMLSelectElement>("units").onchange = () => {
   if (!busy && rawBytes) importRaw();
 };
@@ -436,7 +454,7 @@ $("download").onclick = () => {
   const url = URL.createObjectURL(new Blob([output], { type: "model/stl" })),
     a = document.createElement("a");
   a.href = url;
-  a.download = "hsw-prototype-fused-mm.stl";
+  a.download = `${$<HTMLSelectElement>("wallSystem").value}-prototype-fused-mm.stl`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };

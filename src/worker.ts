@@ -13,6 +13,7 @@ import {
   detectInputUnit,
   type InputUnit,
   type Placement,
+  type WallSystem,
 } from "./pipeline";
 const ready = initialize({ locateFile: () => wasmUrl });
 self.onmessage = async (
@@ -23,10 +24,12 @@ self.onmessage = async (
     model?: Float32Array;
     faceIndex?: number;
     placement: Placement;
+    wallSystem?: WallSystem;
+    blockThickness?: number;
     unit?: InputUnit | "auto";
   }>,
 ) => {
-  const { id, type, placement } = e.data;
+  const { id, type, placement, wallSystem = "hsw", blockThickness = 2 } = e.data;
   try {
     postMessage({ id, progress: "Loading geometry engine…" });
     await ready;
@@ -40,10 +43,10 @@ self.onmessage = async (
     if (type === "faceCenter") {
       postMessage({ id, faceCenter: findPlanarFaceCenter(e.data.model!, e.data.faceIndex!) });
     } else if (type === "fuse") {
-      const a = fuse(e.data.model!, placement);
+      const a = fuse(e.data.model!, placement, wallSystem, blockThickness);
       postMessage({ id, result: a, bytes: encode(a) });
     } else if (type === "preview") {
-      const s = placed(placement);
+      const s = placed(placement, wallSystem, blockThickness);
       const a = positions(s);
       s.delete();
       postMessage({ id, plug: a });
