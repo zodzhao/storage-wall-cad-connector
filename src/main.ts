@@ -1,61 +1,132 @@
-import { rotateMesh } from "./orientation";
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Placement, InputUnit, WallSystem } from "./pipeline";
 import "./style.css";
 document.querySelector("#app")!.innerHTML = `
-  <header><a href="./" aria-label="Connector workspace home"><strong>Connector</strong> Attach to all your utility walls</a></header>
-  <main>
-    <aside>
-      <h1>Attach your model</h1>
+  <main class="map-layout">
+    <div id="viewport" aria-label="Interactive 3D model preview">
+      <div class="legend"><i></i> Object <i class="orange"></i> Insert · mm</div>
+    </div>
+
+    <aside class="map-card" aria-label="Connector controls">
+      <div class="card-header">
+        <a class="brand" href="./" aria-label="Connector workspace home">
+          <span class="brand-badge">C</span>
+          <span>Connector</span>
+        </a>
+        <h1>Attach your model</h1>
+      </div>
       <div class="tabs" role="tablist" aria-label="Configuration">
         <button id="basicTab" type="button" role="tab" aria-selected="true" aria-controls="basicPanel">Basic</button>
         <button id="advancedTab" type="button" role="tab" aria-selected="false" aria-controls="advancedPanel" tabindex="-1">Advanced</button>
       </div>
       <div id="basicPanel" role="tabpanel" aria-labelledby="basicTab">
-        <div class="step"><h2><span>1</span> Upload</h2>
-          <label class="upload">Open an STL<input id="file" type="file" accept=".stl" /></label>
+        <div class="step">
+          <label class="upload">
+            <span class="upload-title">Open an STL</span>
+            <span class="upload-sub">Drop or browse .stl file</span>
+            <input id="file" type="file" accept=".stl" />
+          </label>
         </div>
-        <div class="step"><h2><span>2</span> Wall system</h2>
+        <div class="step">
+          <label class="field-label" for="wallSystem">Wall system</label>
           <select id="wallSystem" aria-label="Wall system"><option value="hsw">Honeycomb Storage Wall (HSW)</option><option value="skadis">IKEA SKÅDIS</option><option value="multiboard">Multiboard (prototype)</option></select>
           <p id="systemNote" class="muted" hidden>Experimental Multiboard snap: source-code licence does not establish mating-profile provenance or physical fit. Verify rights before sharing.</p>
         </div>
-        <div class="step"><h2><span>3</span> Choose face center</h2>
+        <div class="step step-last">
           <button id="pick" disabled>Choose face center</button>
           <p class="muted">Click, then select a face on the model.</p>
         </div>
       </div>
       <div id="advancedPanel" role="tabpanel" aria-labelledby="advancedTab" hidden>
-        <h2>Model & scale</h2><button id="sample">Try a sample solid</button>
-        <label class="units">STL coordinate units<select id="units"><option value="auto">Auto (suggest units)</option><option value="mm">Millimetres (mm)</option><option value="cm">Centimetres (cm)</option><option value="m">Metres (m)</option><option value="in">Inches (in)</option></select></label>
-        <p id="unitInfo" class="muted">Auto suggests mm or metres from dimensions. STL has no unit metadata; review the converted size.</p>
-        <p class="muted">Size guard: 0.1-300 mm per axis. Scale in your CAD tool before import.</p>
-        <h2>Orient object</h2><p class="muted">Rotation changes the exported STL, not just the view.</p>
-        <div class="rotate-grid"><button id="rotateXp" disabled>Rotate X +90°</button><button id="rotateXm" disabled>Rotate X -90°</button><button id="rotateYp" disabled>Rotate Y +90°</button><button id="rotateYm" disabled>Rotate Y -90°</button></div>
-        <button id="resetOrientation" disabled>Reset orientation</button>
-        <div><h2>Connector block</h2>
-          <label>Connector block thickness / mm<input id="blockThickness" type="number" min="0" max="10" step="0.5" value="2"></label>
-          <p class="muted">Applies to every wall system. 0 joins the connector directly to your model; more space may improve board clearance. Check the preview and print-fit.</p>
+        <div class="adv-section">
+          <div class="adv-row">
+            <h2>Model &amp; units</h2>
+            <button id="sample" type="button">Try a sample solid</button>
+          </div>
+          <label class="units">STL coordinate units<select id="units"><option value="auto">Auto (suggest units)</option><option value="mm">Millimetres (mm)</option><option value="cm">Centimetres (cm)</option><option value="m">Metres (m)</option><option value="in">Inches (in)</option></select></label>
+          <p id="unitInfo" class="muted">Auto-detects mm or m · 0.1–300 mm</p>
         </div>
-        <h2>Precise placement</h2>
-        <div class="fields">${["x", "y", "z"].map((x) => `<label>${x.toUpperCase()} / mm<input id="${x}" type="number" step="0.1" value="0"></label>`).join("")}
-          <label>Rotation / °<input id="rotation" type="number" step="5" value="0"></label>
-          <label>Overlap / mm<input id="depth" type="number" min="0.1" max="2" step="0.1" value="1"></label>
+
+        <div class="adv-section adv-section-last">
+          <div class="adv-row">
+            <h2>Placement</h2>
+            <button id="top" disabled>Use top centre (+Z)</button>
+          </div>
+          <div class="fields">${["x", "y", "z"].map((x) => `<label>${x.toUpperCase()} / mm<input id="${x}" type="number" step="0.1" value="0"></label>`).join("")}
+            <label>Rot X / °<input id="rotX" type="number" step="5" value="0"></label>
+            <label>Rot Y / °<input id="rotY" type="number" step="5" value="0"></label>
+            <label>Rot Z / °<input id="rotation" type="number" step="5" value="0"></label>
+          </div>
+          <div class="adv-row" style="margin: 0 0 10px;">
+            <span class="field-label" style="margin:0;">Quick rotate</span>
+            <div class="rotate-row">
+              <button id="connRotX90" aria-label="Rotate connector X +90°" title="Rotate connector X +90°" disabled>X +90°</button>
+              <button id="connRotY90" aria-label="Rotate connector Y +90°" title="Rotate connector Y +90°" disabled>Y +90°</button>
+              <button id="connRotZ90" aria-label="Rotate connector +90°" title="Rotate connector Z +90°" disabled>Z +90°</button>
+              <button id="connRotReset" aria-label="Reset connector rotation" title="Reset connector rotation (0°)" disabled>0°</button>
+            </div>
+          </div>
+          <div class="fields fields-2">
+            <label>Overlap / mm<input id="depth" type="number" min="0.1" max="2" step="0.1" value="1"></label>
+            <label>Block / mm<input id="blockThickness" type="number" min="0" max="10" step="0.5" value="2"></label>
+          </div>
+          <p id="normal" class="muted">No mounting face selected</p>
         </div>
-        <button id="top" disabled>Use top centre (+Z)</button>
-        <p id="normal" class="muted">No mounting face selected</p>
-        <p class="muted">On curved or uneven surfaces, adjust the coordinates manually. Orange is the placement preview; check clearance.</p>
-        <div class="warning">Unverified-fit prototype<br><small>Print-fit and load capacity have not been tested.</small></div>
       </div>
     </aside>
-    <section class="operate">
-      <div class="toolbar"><div><h2>Assembly preview</h2><p id="modelInfo" class="muted">One Object · ≤10 MiB · ≤100k triangles</p></div><button id="reset">Fit view</button></div>
-      <div id="viewport" aria-label="Interactive 3D model preview"><div class="legend"><i></i> Object <i class="orange"></i> Insert · mm</div></div>
-      <div class="bottom"><p id="status" role="status" aria-live="polite">Open an STL to begin.</p>
-        <div class="actions"><button id="cancel" disabled>Cancel</button><button id="fuse" disabled>Fuse & verify</button><button id="download" disabled>Download STL ↓</button></div>
+
+    <div class="map-top-right">
+      <span id="modelInfo" class="info-pill">One Object · ≤10 MiB · ≤100k triangles</span>
+      <button id="reset" type="button">Fit view</button>
+      <button id="helpBtn" type="button" aria-label="Help & instructions" title="Help & instructions">?</button>
+    </div>
+
+    <dialog id="helpDialog" class="help-dialog" aria-labelledby="helpTitle">
+      <div class="help-header">
+        <h2 id="helpTitle">How to use Connector</h2>
+        <button id="helpClose" type="button" aria-label="Close help">✕</button>
       </div>
-      <footer>Browser only. No model upload, account or server storage. Prototype: physical fit and load capacity untested.<br>Original wall-system listing: <a href="https://makerworld.com/en/models/22521-honeycomb-storage-wall#profileId-27457">Honeycomb storage wall by rostap</a> (CC BY-NC on MakerWorld; original files not bundled).<br>Connector code derived from <a href="https://github.com/neclimdul/hws_openscad_attachments_and_connectors">James Gilliland’s MIT HWS generator</a>.<br>SKÅDIS peg geometry adapted from <a href="https://github.com/jmylchreest/openscad-models/tree/edeea813c1f7941eea1e2d8fe9e1f844de0a227b/libraries/ikea-skadis">John Mylchreest’s MIT OpenSCAD module</a>. Not affiliated with IKEA.<br>Multiboard snap adapted from <a href="https://github.com/haliphax/multiboard-openscad/blob/95a37a6b75fe3feaac61db63dfac0576480ac1df/parts/snap.scad">haliphax’s MIT OpenSCAD source</a>. Prototype only: design provenance and physical fit unverified; not affiliated with MultiBuild.</footer>
-    </section>
+      <div class="help-body">
+        <section>
+          <h3>Quick start</h3>
+          <ol>
+            <li><strong>Open an STL</strong> in <strong>Basic</strong> (or click <strong>Try a sample solid</strong> in <strong>Advanced</strong>). Everything runs locally in your browser (<code>0.1–300 mm</code>, <code>≤10 MiB</code>, <code>≤100k triangles</code>).</li>
+            <li>Select your <strong>Wall system</strong> (HSW, IKEA SKÅDIS, or Multiboard).</li>
+            <li>Click <strong>Choose face center</strong>, then click a face on the 3D model to preview the orange connector.</li>
+            <li>Click <strong>Fuse &amp; verify</strong>, then <strong>Download STL ↓</strong>.</li>
+          </ol>
+        </section>
+        <section>
+          <h3>Controls &amp; shortcuts</h3>
+          <ul>
+            <li><strong>Orbit / Pan / Zoom:</strong> Left-drag · Right-drag · Scroll</li>
+            <li><strong>Undo / Redo:</strong> <kbd>Ctrl</kbd>+<kbd>Z</kbd> (<kbd>⌘</kbd>+<kbd>Z</kbd>) · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></li>
+            <li><strong>Cancel face pick:</strong> <kbd>Esc</kbd></li>
+          </ul>
+        </section>
+        <section>
+          <h3>Advanced placement</h3>
+          <ul>
+            <li><strong>STL coordinate units:</strong> STL files have no unit metadata. Override auto-detection if dimensions look off.</li>
+            <li><strong>Rot X / Y / Z (°):</strong> Rotates the connector piece relative to the selected face.</li>
+            <li><strong>Overlap (0.1–2 mm):</strong> Embed depth into your model for a watertight Boolean union.</li>
+            <li><strong>Block (0–10 mm):</strong> Spacer pad between your model and the insert (<code>0</code> = flush).</li>
+          </ul>
+        </section>
+      </div>
+    </dialog>
+
+    <div class="map-bottom-dock">
+      <p id="status" role="status" aria-live="polite">Open an STL to begin.</p>
+      <div class="actions">
+        <button id="cancel" disabled>Cancel</button>
+        <button id="fuse" disabled>Fuse & verify</button>
+        <button id="download" disabled>Download STL ↓</button>
+      </div>
+    </div>
+
+    <footer class="map-attribution">Browser only. No upload or server storage. Prototype: fit untested. · <a href="https://makerworld.com/en/models/22521-honeycomb-storage-wall#profileId-27457">Honeycomb storage wall by rostap</a> (CC BY-NC) · <a href="https://github.com/neclimdul/hws_openscad_attachments_and_connectors">MIT HWS generator</a> · <a href="https://github.com/jmylchreest/openscad-models/tree/edeea813c1f7941eea1e2d8fe9e1f844de0a227b/libraries/ikea-skadis">SKÅDIS MIT</a> · <a href="https://github.com/haliphax/multiboard-openscad/blob/95a37a6b75fe3feaac61db63dfac0576480ac1df/parts/snap.scad">Multiboard MIT</a></footer>
   </main>`;
 const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as E;
@@ -76,8 +147,111 @@ let placement: Placement = {
   point: [0, 0, 0],
   normal: [0, 0, 1],
   rotation: 0,
+  rotationX: 0,
+  rotationY: 0,
   depth: 1,
 };
+type Snapshot = {
+  model: Float32Array | undefined;
+  sourceModel: Float32Array | undefined;
+  selected: boolean;
+  placement: Placement;
+  wallSystem: WallSystem;
+  blockThickness: string;
+  normalText: string;
+  faceTriangles?: number[];
+};
+let lastFaceTriangles: number[] | undefined;
+const undoStack: Snapshot[] = [];
+const redoStack: Snapshot[] = [];
+function takeSnapshot(): Snapshot {
+  return {
+    model,
+    sourceModel,
+    selected,
+    placement: {
+      point: [...placement.point],
+      normal: [...placement.normal],
+      rotation: placement.rotation,
+      rotationX: placement.rotationX ?? 0,
+      rotationY: placement.rotationY ?? 0,
+      depth: placement.depth,
+    },
+    wallSystem: $<HTMLSelectElement>("wallSystem").value as WallSystem,
+    blockThickness: $<HTMLInputElement>("blockThickness").value,
+    normalText: $("normal").textContent ?? "",
+    faceTriangles: lastFaceTriangles ? [...lastFaceTriangles] : undefined,
+  };
+}
+let lastCommitted: Snapshot = takeSnapshot();
+function resetHistory() {
+  undoStack.length = 0;
+  redoStack.length = 0;
+  lastCommitted = takeSnapshot();
+}
+function recordHistory() {
+  undoStack.push(lastCommitted);
+  if (undoStack.length > 30) undoStack.shift();
+  redoStack.length = 0;
+  lastCommitted = takeSnapshot();
+}
+function applySnapshot(s: Snapshot) {
+  const meshChanged = s.model !== model;
+  model = s.model;
+  sourceModel = s.sourceModel;
+  selected = s.selected;
+  placement = {
+    point: [...s.placement.point],
+    normal: [...s.placement.normal],
+    rotation: s.placement.rotation,
+    rotationX: s.placement.rotationX ?? 0,
+    rotationY: s.placement.rotationY ?? 0,
+    depth: s.placement.depth,
+  };
+  lastFaceTriangles = s.faceTriangles ? [...s.faceTriangles] : undefined;
+  $<HTMLSelectElement>("wallSystem").value = s.wallSystem;
+  syncSystemNote();
+  $<HTMLInputElement>("blockThickness").value = s.blockThickness;
+  ["x", "y", "z"].forEach((axis, i) => {
+    $<HTMLInputElement>(axis).value = String(placement.point[i]);
+  });
+  $<HTMLInputElement>("rotX").value = String(placement.rotationX ?? 0);
+  $<HTMLInputElement>("rotY").value = String(placement.rotationY ?? 0);
+  $<HTMLInputElement>("rotation").value = String(placement.rotation);
+  $<HTMLInputElement>("depth").value = String(placement.depth);
+  $("normal").textContent = s.normalText;
+  invalidate();
+  if (model && meshChanged) {
+    show(model);
+    fit();
+    setModelInfo();
+  }
+  remove(faceHighlight);
+  faceHighlight = undefined;
+  if (selected && lastFaceTriangles) markFace(lastFaceTriangles, placement.normal);
+  if (selected && model) preview();
+  else {
+    remove(plug);
+    plug = undefined;
+  }
+  buttons();
+}
+function undo() {
+  if (busy || undoStack.length === 0) return;
+  const prev = undoStack.pop()!;
+  redoStack.push(lastCommitted);
+  applySnapshot(prev);
+  lastCommitted = prev;
+  status("Undid last change.");
+}
+function redo() {
+  if (busy || redoStack.length === 0) return;
+  const next = redoStack.pop()!;
+  undoStack.push(lastCommitted);
+  applySnapshot(next);
+  lastCommitted = next;
+  status("Redid change.");
+}
 const scene = new T.Scene();
 scene.background = new T.Color("#e8edea");
 const camera = new T.PerspectiveCamera(40, 1, 0.1, 10000);
@@ -169,7 +343,7 @@ function fit() {
 function buttons() {
   for (const id of ["file", "sample", "x", "y", "z", "rotation", "depth", "units", "wallSystem", "blockThickness"])
     ($(id) as HTMLInputElement).disabled = busy;
-  for (const id of ["rotateXp", "rotateXm", "rotateYp", "rotateYm", "resetOrientation"])
+  for (const id of ["connRotX90", "connRotY90", "connRotZ90", "connRotReset"])
     $<HTMLButtonElement>(id).disabled = busy || !model;
   $<HTMLButtonElement>("top").disabled = busy || !model;
   $<HTMLButtonElement>("fuse").disabled =
@@ -206,14 +380,16 @@ function boot() {
     } else if (d.model) {
       model = d.model;
       sourceModel = d.model;
+      lastFaceTriangles = undefined;
       clearPlacement();
-      $("unitInfo").textContent = d.autoDetected ? `${d.unit === "m" ? "Metres" : "Millimetres"} detected (suggestion only). Review the displayed mm dimensions; change units in Advanced if needed.` : `${d.unit === "m" ? "Metres" : d.unit === "cm" ? "Centimetres" : d.unit === "in" ? "Inches" : "Millimetres"} selected. Review the displayed mm dimensions; change units in Advanced if needed.`;
+      $("unitInfo").textContent = d.autoDetected ? `${d.unit === "m" ? "Metres" : "Millimetres"} detected (auto)` : `${d.unit === "m" ? "Metres" : d.unit === "cm" ? "Centimetres" : d.unit === "in" ? "Inches" : "Millimetres"} selected`;
       invalidate();
       remove(plug);
       plug = undefined;
       show(model!);
       fit();
       setModelInfo();
+      resetHistory();
       status("Solid validated. Check the model size, then choose a face center.");
     } else if (d.faceCenter) {
       const face = d.faceCenter as {
@@ -224,12 +400,14 @@ function boot() {
       placement.point = face.point;
       placement.normal = face.normal;
       selected = true;
+      lastFaceTriangles = face.triangles;
       ["x", "y", "z"].forEach((axis, i) => {
         $<HTMLInputElement>(axis).value = face.point[i].toFixed(3);
       });
       $("normal").textContent =
         `Face center · ${face.triangles.length} triangles · normal ${face.normal.map((v) => v.toFixed(2)).join(", ")}`;
       markFace(face.triangles, face.normal);
+      recordHistory();
       preview();
     } else if (d.plug) {
       remove(plug);
@@ -313,11 +491,14 @@ syncSystemNote();
 $<HTMLSelectElement>("wallSystem").onchange = () => {
   if (busy) return;
   syncSystemNote();
+  recordHistory();
   if (selected && model) preview();
   else { invalidate(); status("Wall system changed. Choose a face center to preview the connector."); }
 };
 $<HTMLInputElement>("blockThickness").onchange = () => {
-  if (!busy) preview();
+  if (busy) return;
+  recordHistory();
+  preview();
 };
 $<HTMLSelectElement>("units").onchange = () => {
   if (!busy && rawBytes) importRaw();
@@ -359,43 +540,47 @@ $("top").onclick = () => {
   placement.point = [c.x, c.y, box.max.z];
   placement.normal = [0, 0, 1];
   selected = true;
+  lastFaceTriangles = undefined;
   ["x", "y", "z"].forEach((x, i) => {
     $<HTMLInputElement>(x).value = String(placement.point[i]);
   });
   $("normal").textContent =
     "Face normal: 0, 0, 1. Adjust coordinates for your surface.";
+  recordHistory();
   preview();
 };
-function orient(axis: "x" | "y", direction: -1 | 1) {
-  if (!model || busy) return;
-  model = rotateMesh(model, axis, direction);
-  clearPlacement();
-  invalidate();
-  remove(plug);
-  plug = undefined;
-  show(model);
-  fit();
-  setModelInfo();
-  status(`Rotated ${axis.toUpperCase()} ${direction > 0 ? "+" : "-"}90°. Choose a face center or use top centre.`);
-  buttons();
+function wrapAngle(deg: number) {
+  const w = ((((deg + 180) % 360) + 360) % 360) - 180;
+  return w === -180 ? 180 : w;
 }
-$("rotateXp").onclick = () => orient("x", 1);
-$("rotateXm").onclick = () => orient("x", -1);
-$("rotateYp").onclick = () => orient("y", 1);
-$("rotateYm").onclick = () => orient("y", -1);
-$("resetOrientation").onclick = () => {
-  if (!sourceModel || busy) return;
-  model = sourceModel;
-  clearPlacement();
-  invalidate();
-  remove(plug);
-  plug = undefined;
-  show(model);
-  fit();
-  setModelInfo();
-  status("Original orientation restored. Choose a face center.");
-  buttons();
-};
+function rotateConnector(axis: "x" | "y" | "z" | "all", delta: number) {
+  if (!model || busy) return;
+  if (axis === "all") {
+    placement.rotationX = 0;
+    placement.rotationY = 0;
+    placement.rotation = 0;
+  } else if (axis === "x") {
+    placement.rotationX = wrapAngle((placement.rotationX ?? 0) + delta);
+  } else if (axis === "y") {
+    placement.rotationY = wrapAngle((placement.rotationY ?? 0) + delta);
+  } else {
+    placement.rotation = wrapAngle(placement.rotation + delta);
+  }
+  $<HTMLInputElement>("rotX").value = String(placement.rotationX ?? 0);
+  $<HTMLInputElement>("rotY").value = String(placement.rotationY ?? 0);
+  $<HTMLInputElement>("rotation").value = String(placement.rotation);
+  recordHistory();
+  if (selected) preview();
+  else {
+    invalidate();
+    buttons();
+    status(`Connector rotation: ${placement.rotationX ?? 0}°, ${placement.rotationY ?? 0}°, ${placement.rotation}°. Choose a face center.`);
+  }
+}
+$("connRotX90").onclick = () => rotateConnector("x", 90);
+$("connRotY90").onclick = () => rotateConnector("y", 90);
+$("connRotZ90").onclick = () => rotateConnector("z", 90);
+$("connRotReset").onclick = () => rotateConnector("all", 0);
 $("pick").onclick = () => {
   picking = true;
   status("Click a face to center the connector on its planar patch.");
@@ -432,19 +617,45 @@ function preview() {
   if (model) show(model);
   if (selected && !busy) send("preview");
 }
-for (const id of ["x", "y", "z", "rotation", "depth"])
+for (const id of ["x", "y", "z", "rotX", "rotY", "rotation", "depth"])
   $(id).onchange = () => {
     placement = {
       ...placement,
       point: ["x", "y", "z"].map((x) =>
         Number($<HTMLInputElement>(x).value),
       ) as Placement["point"],
+      rotationX: Number($<HTMLInputElement>("rotX").value),
+      rotationY: Number($<HTMLInputElement>("rotY").value),
       rotation: Number($<HTMLInputElement>("rotation").value),
       depth: Number($<HTMLInputElement>("depth").value),
     };
+    recordHistory();
     preview();
   };
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && picking) {
+    picking = false;
+    renderer.domElement.style.cursor = "";
+    status("Face selection cancelled.");
+    return;
+  }
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const key = e.key.toLowerCase();
+  if (key === "z" && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  } else if (key === "y" || (key === "z" && e.shiftKey)) {
+    e.preventDefault();
+    redo();
+  }
+});
 $("reset").onclick = fit;
+const helpDialog = $<HTMLDialogElement>("helpDialog");
+$("helpBtn").onclick = () => helpDialog.showModal();
+$("helpClose").onclick = () => helpDialog.close();
+helpDialog.onclick = (e) => {
+  if (e.target === helpDialog) helpDialog.close();
+};
 $("fuse").onclick = () => {
   invalidate();
   send("fuse", { model });

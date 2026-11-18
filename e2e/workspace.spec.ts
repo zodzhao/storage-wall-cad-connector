@@ -25,9 +25,9 @@ test("basic tab contains only upload, wall system, and face selection", async ({
   expect(await basic.locator("input, select, button").evaluateAll((items) => items.map((el) => el.id))).toEqual(["file", "wallSystem", "pick"]);
   await expect(page.getByRole("tab", { name: "Advanced" })).toBeVisible();
   await expect(page.getByLabel("I confirm")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Rotate X +90°" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Rotate connector +90°" })).toBeHidden();
   await page.getByRole("tab", { name: "Advanced" }).click();
-  await expect(page.getByRole("button", { name: "Rotate X +90°" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Rotate connector +90°" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Try a sample solid" })).toBeVisible();
   await page.getByRole("tab", { name: "Basic" }).click();
   await expect(basic).toBeVisible();
@@ -172,19 +172,18 @@ test("clicking a cube face snaps to its whole planar patch center", async ({ pag
   await expect(page.locator("#normal")).toContainText("2 triangles");
   await expect(page.getByRole("status")).toContainText("Placement preview ready");
 });
-test("rotating a side upward changes the model and top-center placement", async ({ page }) => {
+test("rotating connector updates placement rotation and invalidates fused export", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("tab", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Try a sample solid" }).click();
   await expect(page.getByRole("status")).toContainText("Solid validated");
-  await page.getByRole("button", { name: "Rotate X +90°" }).click();
-  await expect(page.locator("#modelInfo")).toContainText("40.0 × 20.0 × 40.0 mm");
   await page.getByRole("button", { name: "Use top centre" }).click();
-  await expect(page.locator("#z")).toHaveValue("20");
+  await page.getByRole("button", { name: "Rotate connector +90°" }).click();
+  await expect(page.locator("#rotation")).toHaveValue("90");
   await page.getByRole("button", { name: "Fuse & verify" }).click();
   await expect(page.getByRole("status")).toContainText("Verified: one connected");
-  await page.getByRole("button", { name: "Reset orientation" }).click();
-  await expect(page.locator("#modelInfo")).toContainText("40.0 × 40.0 × 20.0 mm");
+  await page.getByRole("button", { name: "Reset connector rotation" }).click();
+  await expect(page.locator("#rotation")).toHaveValue("0");
   await expect(page.getByRole("button", { name: "Download STL" })).toBeDisabled();
 });
 

@@ -1,6 +1,6 @@
 import Factory, { type Manifold, type ManifoldToplevel } from "manifold-3d";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
-import { Quaternion, Vector3, Matrix4 } from "three";
+import { Euler, Quaternion, Vector3, Matrix4 } from "three";
 let api: ManifoldToplevel;
 export async function initialize(options?: Parameters<typeof Factory>[0]) {
   api = await Factory(options);
@@ -10,6 +10,8 @@ export type Placement = {
   point: [number, number, number];
   normal: [number, number, number];
   rotation: number;
+  rotationX?: number;
+  rotationY?: number;
   depth: number;
 };
 export const MAX_BYTES = 10 * 1024 * 1024,
@@ -278,8 +280,10 @@ export function connector(system: WallSystem = "hsw", blockThickness = 2) {
   throw Error("Unsupported wall system.");
 }
 export function placed(p: Placement, system: WallSystem = "hsw", blockThickness = 2) {
+  const rx = p.rotationX ?? 0;
+  const ry = p.rotationY ?? 0;
   if (
-    ![...p.point, ...p.normal, p.rotation, p.depth].every(Number.isFinite) ||
+    ![...p.point, ...p.normal, p.rotation, rx, ry, p.depth].every(Number.isFinite) ||
     p.depth < 0.1 ||
     p.depth > 2
   )
@@ -289,9 +293,13 @@ export function placed(p: Placement, system: WallSystem = "hsw", blockThickness 
   n.normalize();
   const q = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), n);
   q.multiply(
-    new Quaternion().setFromAxisAngle(
-      new Vector3(0, 0, 1),
-      (p.rotation * Math.PI) / 180,
+    new Quaternion().setFromEuler(
+      new Euler(
+        (rx * Math.PI) / 180,
+        (ry * Math.PI) / 180,
+        (p.rotation * Math.PI) / 180,
+        "XYZ",
+      ),
     ),
   );
   const origin = new Vector3(...p.point).addScaledVector(n, -p.depth);
