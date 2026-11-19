@@ -5,6 +5,8 @@ import "./style.css";
 document.querySelector("#app")!.innerHTML = `
   <main class="map-layout">
     <div id="viewport" aria-label="Interactive 3D model preview">
+      <div id="pickHint" class="pick-hint" hidden>Click any face on the model · Esc to cancel</div>
+      <div id="dropOverlay" class="drop-overlay" hidden>Drop .stl file to open</div>
       <div class="legend"><i></i> Object <i class="orange"></i> Insert · mm</div>
     </div>
 
@@ -15,6 +17,10 @@ document.querySelector("#app")!.innerHTML = `
           <span>Connector</span>
         </a>
         <h1>Attach your model</h1>
+      </div>
+      <div id="mobileNotice" class="mobile-notice" role="note">
+        <span>Best used on a desktop computer for 3D picking &amp; STL export.</span>
+        <button id="mobileNoticeClose" type="button" aria-label="Dismiss desktop recommendation">✕</button>
       </div>
       <div class="tabs" role="tablist" aria-label="Configuration">
         <button id="basicTab" type="button" role="tab" aria-selected="true" aria-controls="basicPanel">Basic</button>
@@ -27,6 +33,7 @@ document.querySelector("#app")!.innerHTML = `
             <span class="upload-sub">Drop or browse .stl file</span>
             <input id="file" type="file" accept=".stl" />
           </label>
+          <a href="#sample" id="quickSample" class="quick-sample">or try a sample solid</a>
         </div>
         <div class="step">
           <label class="field-label" for="wallSystem">Wall system</label>
@@ -118,7 +125,10 @@ document.querySelector("#app")!.innerHTML = `
     </dialog>
 
     <div class="map-bottom-dock">
-      <p id="status" role="status" aria-live="polite">Open an STL to begin.</p>
+      <div class="status-wrap">
+        <span id="spinner" class="spinner" hidden aria-hidden="true"></span>
+        <p id="status" role="status" aria-live="polite">Open an STL to begin.</p>
+      </div>
       <div class="actions">
         <button id="cancel" disabled>Cancel</button>
         <button id="fuse" disabled>Fuse & verify</button>
@@ -140,9 +150,16 @@ let seq = 0,
   model: Float32Array | undefined,
   sourceModel: Float32Array | undefined,
   rawBytes: ArrayBuffer | undefined,
+  modelName: string | undefined,
   output: ArrayBuffer | undefined,
   selected = false,
   picking = false;
+function setPicking(active: boolean) {
+  picking = active;
+  renderer.domElement.style.cursor = active ? "crosshair" : "";
+  $("pick").classList.toggle("is-picking", active);
+  $("pickHint").hidden = !active;
+}
 let placement: Placement = {
   point: [0, 0, 0],
   normal: [0, 0, 1],
@@ -322,8 +339,7 @@ function setModelInfo() {
 }
 function clearPlacement() {
   selected = false;
-  picking = false;
-  renderer.domElement.style.cursor = "";
+  setPicking(false);
   remove(faceHighlight);
   faceHighlight = undefined;
   $("normal").textContent = "No mounting face selected";
@@ -341,7 +357,8 @@ function fit() {
   camera.updateProjectionMatrix();
 }
 function buttons() {
-  for (const id of ["file", "sample", "x", "y", "z", "rotation", "depth", "units", "wallSystem", "blockThickness"])
+  $("spinner").hidden = !busy;
+  for (const id of ["file", "sample", "x", "y", "z", "rotX", "rotY", "rotation", "depth", "units", "wallSystem", "blockThickness"])
     ($(id) as HTMLInputElement).disabled = busy;
   for (const id of ["connRotX90", "connRotY90", "connRotZ90", "connRotReset"])
     $<HTMLButtonElement>(id).disabled = busy || !model;
@@ -458,10 +475,15 @@ for (const tab of ["basic", "advanced"] as const) {
 $("sample").onclick = () => {
   if (!busy) {
     rawBytes = undefined;
+    modelName = undefined;
     $<HTMLSelectElement>("units").value = "auto";
     invalidate();
     send("sample");
   }
+};
+$("quickSample").onclick = (e) => {
+  e.preventDefault();
+  $("sample").click();
 };
 function clearForImport() {
   invalidate();
@@ -503,11 +525,14 @@ $<HTMLInputElement>("blockThickness").onchange = () => {
 $<HTMLSelectElement>("units").onchange = () => {
   if (!busy && rawBytes) importRaw();
 };
-$<HTMLInputElement>("file").onchange = async (e) => {
+async function loadFile(f: File) {
   if (busy) return;
-  const f = (e.target as HTMLInputElement).files?.[0];
-  if (!f) return;
+  if (!f.name.toLowerCase().endsWith(".stl") && f.type && f.type !== "model/stl" && f.type !== "application/sla") {
+    status("Please choose a .stl file.", true);
+    return;
+  }
   rawBytes = undefined;
+  modelName = f.name.replace(/\.stl$/i, "") || undefined;
   clearForImport();
   if (f.size > 10 * 1024 * 1024) {
     status("File exceeds 10 MiB.", true);
@@ -524,7 +549,33 @@ $<HTMLInputElement>("file").onchange = async (e) => {
     buttons();
     status("Could not read the STL file.", true);
   }
+}
+$<HTMLInputElement>("file").onchange = (e) => {
+  const f = (e.target as HTMLInputElement).files?.[0];
+  if (f) void loadFile(f);
 };
+let dragDepth = 0;
+window.addEventListener("dragenter", (e) => {
+  if (!e.dataTransfer?.types.includes("Files")) return;
+  e.preventDefault();
+  dragDepth++;
+  $("dropOverlay").hidden = false;
+});
+window.addEventListener("dragover", (e) => {
+  if (!e.dataTransfer?.types.includes("Files")) return;
+  e.preventDefault();
+});
+window.addEventListener("dragleave", () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) $("dropOverlay").hidden = true;
+});
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  $("dropOverlay").hidden = true;
+  const f = e.dataTransfer?.files?.[0];
+  if (f) void loadFile(f);
+});
 $("cancel").onclick = () => {
   worker.terminate();
   seq++;
@@ -582,9 +633,8 @@ $("connRotY90").onclick = () => rotateConnector("y", 90);
 $("connRotZ90").onclick = () => rotateConnector("z", 90);
 $("connRotReset").onclick = () => rotateConnector("all", 0);
 $("pick").onclick = () => {
-  picking = true;
+  setPicking(true);
   status("Click a face to center the connector on its planar patch.");
-  renderer.domElement.style.cursor = "crosshair";
 };
 let down = [0, 0];
 renderer.domElement.onpointerdown = (e) => {
@@ -608,8 +658,7 @@ renderer.domElement.onpointerup = (e) => {
   );
   const hit = ray.intersectObject(object)[0];
   if (hit?.faceIndex === undefined) return;
-  picking = false;
-  renderer.domElement.style.cursor = "";
+  setPicking(false);
   send("faceCenter", { model, faceIndex: hit.faceIndex });
 };
 function preview() {
@@ -634,8 +683,7 @@ for (const id of ["x", "y", "z", "rotX", "rotY", "rotation", "depth"])
   };
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && picking) {
-    picking = false;
-    renderer.domElement.style.cursor = "";
+    setPicking(false);
     status("Face selection cancelled.");
     return;
   }
@@ -650,6 +698,9 @@ window.addEventListener("keydown", (e) => {
   }
 });
 $("reset").onclick = fit;
+$("mobileNoticeClose").onclick = () => {
+  $("mobileNotice").hidden = true;
+};
 const helpDialog = $<HTMLDialogElement>("helpDialog");
 $("helpBtn").onclick = () => helpDialog.showModal();
 $("helpClose").onclick = () => helpDialog.close();
@@ -665,7 +716,8 @@ $("download").onclick = () => {
   const url = URL.createObjectURL(new Blob([output], { type: "model/stl" })),
     a = document.createElement("a");
   a.href = url;
-  a.download = `${$<HTMLSelectElement>("wallSystem").value}-prototype-fused-mm.stl`;
+  const sys = $<HTMLSelectElement>("wallSystem").value;
+  a.download = modelName ? `${modelName}-${sys}-mm.stl` : `${sys}-prototype-fused-mm.stl`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };

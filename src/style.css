@@ -611,7 +611,111 @@ input[type="number"] {
   text-underline-offset: 2px;
 }
 
+.quick-sample {
+  display: block;
+  margin-top: 8px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #4f6359;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.quick-sample:hover {
+  color: #1d2d26;
+}
+
+#pick.is-picking {
+  background: #fdf3df;
+  border-color: #d48d2a;
+  color: #6b460c;
+}
+
+.pick-hint {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  pointer-events: none;
+  background: rgba(29, 45, 38, 0.92);
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.drop-overlay {
+  position: fixed;
+  inset: 14px;
+  z-index: 50;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  border: 2px dashed #244a3a;
+  border-radius: 16px;
+  background: rgba(232, 237, 234, 0.84);
+  backdrop-filter: blur(6px);
+  font-size: 16px;
+  font-weight: 600;
+  color: #1d2d26;
+}
+
+.status-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px solid #cbd5ce;
+  border-top-color: #244a3a;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mobile-notice {
+  display: none;
+}
+
 @media (max-width: 800px) {
+  .mobile-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #fdf3df;
+    border: 1px solid #e7c283;
+    color: #6b460c;
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+
+  .mobile-notice button {
+    padding: 2px 6px;
+    border: 0;
+    background: transparent;
+    color: #6b460c;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
   .map-card {
     top: 10px;
     left: 10px;
