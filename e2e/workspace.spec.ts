@@ -110,6 +110,49 @@ test("mobile workspace has no horizontal overflow", async ({ page }) => {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  const layout = await page.evaluate(() => {
+    const card = document.querySelector(".map-card")!.getBoundingClientRect();
+    const pick = document.getElementById("pick")!.getBoundingClientRect();
+    const topRight = document.querySelector(".map-top-right")!.getBoundingClientRect();
+    const dock = document.querySelector(".map-bottom-dock")!.getBoundingClientRect();
+    const footer = document.querySelector(".map-attribution")!.getBoundingClientRect();
+    return {
+      pickInsideCard: pick.bottom <= card.bottom + 1,
+      cardAboveTopRight: card.bottom <= topRight.top + 1,
+      topRightAboveDock: topRight.bottom <= dock.top + 1,
+      dockAboveFooter: dock.bottom <= footer.top + 1,
+    };
+  });
+  expect(layout).toEqual({
+    pickInsideCard: true,
+    cardAboveTopRight: true,
+    topRightAboveDock: true,
+    dockAboveFooter: true,
+  });
+});
+
+test("post-fuse updates model info pill, avoids status truncation, and exposes feedback links", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("footer").getByRole("link", { name: "Feedback" })).toHaveAttribute("href", /github\.com\/zodzhao\/storage-wall-cad-connector\/issues/);
+  await page.locator("#helpBtn").click();
+  await expect(page.locator("#helpDialog").getByRole("link", { name: /Report an issue/i })).toHaveAttribute("href", /github\.com\/zodzhao\/storage-wall-cad-connector\/issues/);
+  await page.locator("#helpClose").click();
+  await page.locator("#quickSample").click();
+  await expect(page.getByRole("status")).toContainText("Solid validated");
+  await expect(page.locator("#modelInfo")).toContainText("40.0 × 40.0 × 20.0 mm · 12 triangles");
+  await page.getByRole("tab", { name: "Advanced" }).click();
+  await page.getByRole("button", { name: "Use top centre" }).click();
+  await expect(page.getByRole("status")).toContainText("Placement preview ready");
+  await page.getByRole("button", { name: "Fuse & verify" }).click();
+  await expect(page.getByRole("status")).toContainText("Verified: one connected");
+  await expect(page.locator("#modelInfo")).toContainText("40.0 × 40.0 × 31.0 mm");
+  await expect(page.locator("#modelInfo")).not.toContainText("· 12 triangles");
+  const statusClipped = await page.evaluate(() => {
+    const el = document.getElementById("status")!;
+    return el.scrollWidth > el.clientWidth;
+  });
+  expect(statusClipped).toBe(false);
 });
 test("a new model clears previous placement and export", async ({ page }) => {
   await page.goto("/");

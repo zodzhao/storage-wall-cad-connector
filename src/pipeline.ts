@@ -101,23 +101,32 @@ export function validate(a: Float32Array) {
     throw Error(
       "Size guard: each dimension must be 0.1–300 mm; coordinates within ±10,000 mm.",
     );
-  const s = new api.Manifold(
-    new api.Mesh({
-      numProp: 3,
-      vertProperties: new Float32Array(vertices),
-      triVerts: new Uint32Array(indices),
-    }),
-  );
+  let s: Manifold;
+  try {
+    s = new api.Manifold(
+      new api.Mesh({
+        numProp: 3,
+        vertProperties: new Float32Array(vertices),
+        triVerts: new Uint32Array(indices),
+      }),
+    );
+  } catch {
+    throw Error(
+      'Mesh must be watertight, consistently outward oriented and have positive volume. Try "Fix Model" in PrusaSlicer or OrcaSlicer first.',
+    );
+  }
   try {
     if (s.status() !== "NoError" || s.isEmpty() || s.volume() <= 0)
       throw Error(
-        "Mesh must be watertight, consistently outward oriented and have positive volume.",
+        'Mesh must be watertight, consistently outward oriented and have positive volume. Try "Fix Model" in PrusaSlicer or OrcaSlicer first.',
       );
     const parts = s.decompose();
     const count = parts.length;
     parts.forEach((p) => p.delete());
     if (count !== 1)
-      throw Error("Disconnected mesh: supply one connected solid.");
+      throw Error(
+        'Disconnected mesh: supply one connected solid. Try "Fix Model" or "Split to Objects" in PrusaSlicer or OrcaSlicer first.',
+      );
     return s;
   } catch (e) {
     s.delete();
@@ -336,11 +345,38 @@ export function fuse(a: Float32Array, p: Placement, system: WallSystem = "hsw", 
   }
 }
 export function encode(a: Float32Array) {
-  const buffer = new ArrayBuffer(84 + (a.length / 9) * 50),
+  const count = a.length / 9;
+  const buffer = new ArrayBuffer(84 + count * 50),
     v = new DataView(buffer);
-  v.setUint32(80, a.length / 9, true);
-  for (let i = 0; i < a.length / 9; i++)
+  const header = "Connector binary STL (mm)";
+  for (let i = 0; i < header.length; i++) v.setUint8(i, header.charCodeAt(i));
+  v.setUint32(80, count, true);
+  for (let i = 0; i < count; i++) {
+    const base = i * 9;
+    const ax = a[base],
+      ay = a[base + 1],
+      az = a[base + 2];
+    const ux = a[base + 3] - ax,
+      uy = a[base + 4] - ay,
+      uz = a[base + 5] - az;
+    const vx = a[base + 6] - ax,
+      vy = a[base + 7] - ay,
+      vz = a[base + 8] - az;
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 0) {
+      nx /= len;
+      ny /= len;
+      nz /= len;
+    }
+    const off = 84 + i * 50;
+    v.setFloat32(off, nx, true);
+    v.setFloat32(off + 4, ny, true);
+    v.setFloat32(off + 8, nz, true);
     for (let j = 0; j < 9; j++)
-      v.setFloat32(84 + i * 50 + 12 + j * 4, a[i * 9 + j], true);
+      v.setFloat32(off + 12 + j * 4, a[base + j], true);
+  }
   return buffer;
 }

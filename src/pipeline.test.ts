@@ -256,3 +256,36 @@ it("fuses a Multiboard snap to the model and re-imports the binary STL", async (
     solid.delete();
   }
 });
+
+it("writes outward unit facet normals and a header in exported binary STLs", async () => {
+  await initialize();
+  const result = fuse(sample(), {
+    point: [0, 0, 10],
+    normal: [0, 0, 1],
+    rotation: 0,
+    depth: 1,
+  });
+  const bytes = encode(result);
+  const view = new DataView(bytes);
+  const header = new TextDecoder().decode(new Uint8Array(bytes, 0, 25));
+  expect(header).toBe("Connector binary STL (mm)");
+  const count = view.getUint32(80, true);
+  expect(count).toBe(result.length / 9);
+  let unitNormals = 0;
+  for (let i = 0; i < count; i++) {
+    const off = 84 + i * 50;
+    const nx = view.getFloat32(off, true);
+    const ny = view.getFloat32(off + 4, true);
+    const nz = view.getFloat32(off + 8, true);
+    const len = Math.hypot(nx, ny, nz);
+    expect(len).toBeCloseTo(1, 3);
+    unitNormals++;
+  }
+  expect(unitNormals).toBe(count);
+});
+
+it("includes a slicer repair hint when rejecting non-watertight meshes", async () => {
+  await initialize();
+  const openCube = sample().slice(0, -9);
+  expect(() => validate(openCube)).toThrow(/PrusaSlicer|OrcaSlicer/);
+});

@@ -121,6 +121,10 @@ document.querySelector("#app")!.innerHTML = `
             <li><strong>Block (0–10 mm):</strong> Spacer pad between your model and the insert (<code>0</code> = flush).</li>
           </ul>
         </section>
+        <section>
+          <h3>Feedback &amp; issues</h3>
+          <p class="help-feedback">Found a physical fit issue or an STL that fails to fuse? <a href="https://github.com/zodzhao/storage-wall-cad-connector/issues" target="_blank" rel="noopener noreferrer">Report an issue or share feedback on GitHub</a>.</p>
+        </section>
       </div>
     </dialog>
 
@@ -136,7 +140,7 @@ document.querySelector("#app")!.innerHTML = `
       </div>
     </div>
 
-    <footer class="map-attribution">Browser only. No upload or server storage. Prototype: fit untested. · <a href="https://makerworld.com/en/models/22521-honeycomb-storage-wall#profileId-27457">Honeycomb storage wall by rostap</a> (CC BY-NC) · <a href="https://github.com/neclimdul/hws_openscad_attachments_and_connectors">MIT HWS generator</a> · <a href="https://github.com/jmylchreest/openscad-models/tree/edeea813c1f7941eea1e2d8fe9e1f844de0a227b/libraries/ikea-skadis">SKÅDIS MIT</a> · <a href="https://github.com/haliphax/multiboard-openscad/blob/95a37a6b75fe3feaac61db63dfac0576480ac1df/parts/snap.scad">Multiboard MIT</a></footer>
+    <footer class="map-attribution">Browser only. No upload or server storage. Prototype: fit untested. · <a href="https://github.com/zodzhao/storage-wall-cad-connector/issues" target="_blank" rel="noopener noreferrer">Feedback</a> · <a href="https://makerworld.com/en/models/22521-honeycomb-storage-wall#profileId-27457">Honeycomb storage wall by rostap</a> (CC BY-NC) · <a href="https://github.com/neclimdul/hws_openscad_attachments_and_connectors">MIT HWS generator</a> · <a href="https://github.com/jmylchreest/openscad-models/tree/edeea813c1f7941eea1e2d8fe9e1f844de0a227b/libraries/ikea-skadis">SKÅDIS MIT</a> · <a href="https://github.com/haliphax/multiboard-openscad/blob/95a37a6b75fe3feaac61db63dfac0576480ac1df/parts/snap.scad">Multiboard MIT</a></footer>
   </main>`;
 const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as E;
@@ -237,11 +241,12 @@ function applySnapshot(s: Snapshot) {
   $<HTMLInputElement>("rotation").value = String(placement.rotation);
   $<HTMLInputElement>("depth").value = String(placement.depth);
   $("normal").textContent = s.normalText;
+  const wasFused = !!output;
   invalidate();
-  if (model && meshChanged) {
+  if (model && (meshChanged || wasFused)) {
     show(model);
-    fit();
-    setModelInfo();
+    if (meshChanged) fit();
+    setModelInfo(model);
   }
   remove(faceHighlight);
   faceHighlight = undefined;
@@ -331,11 +336,11 @@ function markFace(triangles: number[], normal: number[]) {
   }));
   scene.add(faceHighlight);
 }
-function setModelInfo() {
-  if (!object || !model) return;
+function setModelInfo(displayed: Float32Array | undefined = model) {
+  if (!object || !displayed) return;
   const size = new T.Box3().setFromObject(object).getSize(new T.Vector3());
   $("modelInfo").textContent =
-    `${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm · ${model.length / 9} triangles`;
+    `${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm · ${displayed.length / 9} triangles`;
 }
 function clearPlacement() {
   selected = false;
@@ -434,13 +439,12 @@ function boot() {
     } else if (d.result) {
       output = d.bytes;
       show(d.result);
+      setModelInfo(d.result);
       remove(faceHighlight);
       faceHighlight = undefined;
       remove(plug);
       plug = undefined;
-      status(
-        "Verified: one connected, watertight solid. Exported binary STL re-import passed.",
-      );
+      status("Verified: one connected, watertight solid (STL re-import OK).");
     }
     buttons();
   };
@@ -663,7 +667,10 @@ renderer.domElement.onpointerup = (e) => {
 };
 function preview() {
   invalidate();
-  if (model) show(model);
+  if (model) {
+    show(model);
+    setModelInfo(model);
+  }
   if (selected && !busy) send("preview");
 }
 for (const id of ["x", "y", "z", "rotX", "rotY", "rotation", "depth"])
